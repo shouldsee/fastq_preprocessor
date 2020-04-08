@@ -27,7 +27,8 @@ config = dict(
     entry_points={
         "console_scripts": [
             "preprocessor.py=fastq_preprocessor:main_entry",
-            "fastq_preprocessor=fastq_preprocessor:main_entry",
+            # "fastq_preprocessor=fastq_preprocessor:main_entry",
+            "fastq_preprocess=fastq_preprocessor:main_entry",
             ]},	
 
 )
