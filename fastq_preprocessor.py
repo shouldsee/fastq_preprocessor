@@ -18,6 +18,7 @@ import re
 import json
 
 class pyext(object):
+    @staticmethod
     def df__iterdict(self, into=dict):
         '''
         ### See github issue https://github.com/pandas-dev/pandas/issues/25973#issuecomment-482994387
@@ -195,6 +196,8 @@ def process_rna_sample(samplePATH, debug=0,checkMatch=0, timestamp=1, newDIR=Non
         This function is way too messy to be understood
     '''
     del kwargs
+
+    samplePATH = os.path.realpath(samplePATH)
     ### legacy
     if newDir is not None:
         newDIR = newDir
