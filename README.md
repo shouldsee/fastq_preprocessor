@@ -20,8 +20,12 @@ Example Usage:
     fastq_preprocess test_data --newDIR test_out
     preprocessor.py test_data --newDIR test_out
 Install:
-    python -m pip install pip>=19.0 --upgrade
-    python -m pip install fastq_preprocessor@https://github.com/shouldsee/fastq_preprocessor/tarball/0.0.1
+    python -m pip install "pip>=19.0" --upgrade
+    python -m pip install fastq_preprocessor@https://github.com/shouldsee/fastq_preprocessor/tarball/0.0.2
+
+CHANGELOG:
+# 0.0.2
+- fixed a bug for concatenating fastq files
 
 positional arguments:
   samplePATH
@@ -37,6 +41,4 @@ optional arguments:
   --checkMatch CHECKMATCH
   --debug
   --NCORE NCORE
-
 ```
-

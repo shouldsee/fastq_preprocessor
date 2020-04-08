@@ -5,7 +5,7 @@ from setuptools import setup
 
 config = dict(
 	name='fastq_preprocessor',
-	version = '0.0.1', ### change in __init__.py in sync
+	version = '0.0.2', ### change in __init__.py in sync
 	# package_dir={"": "."},
     packages=['.'],
 	# include_package_data=True,

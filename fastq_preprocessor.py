@@ -14,9 +14,13 @@ Example Usage:
     fastq_preprocess test_data --newDIR test_out
     preprocessor.py test_data --newDIR test_out
 Install:
-    python -m pip install pip>=19.0 --upgrade
-    python -m pip install fastq_preprocessor@https://github.com/shouldsee/fastq_preprocessor/tarball/0.0.1
+    python -m pip install "pip>=19.0" --upgrade
+    python -m pip install fastq_preprocessor@https://github.com/shouldsee/fastq_preprocessor/tarball/0.0.2
 
+
+CHANGELOG:
+# 0.0.2
+- fixed a bug for concatenating fastq files
 '''
 
 import tempfile,subprocess
@@ -258,66 +262,73 @@ def process_rna_sample(samplePATH, debug=0,checkMatch=0, timestamp=1, newDIR=Non
         DIR = '-'.join(DIR)
         temp_dir = DIR
     # os.system('mkdir -p %s'%temp_dir)       
-    with Path(temp_dir).makedirs_p() as cdir:   
+    with Path(temp_dir).realpath().makedirs_p() as cdir:   
     # os.chdir(temp_dir) #     shellexec('cd %s'%temp_dir)
-        
         
         #### Download raw read .fastq from samplePATH
         if 1:
-            FILES = glob.glob('%s/*' % samplePATH)
-            FILES = sum(map(LeafFiles,FILES),[])
-            FILES = filterFastq(FILES)
+        #     FILES = glob.glob('%s/*' % samplePATH)
+        #     FILES = sum(map(LeafFiles,FILES),[])
+        #     FILES = filterFastq(FILES)
 
-            pprint(dict(FILES=FILES,samplePATH=samplePATH))
-        #     ccmd = '%s/* -t %s'%(samplePATH,temp_dir) 
-            ccmd = '%s -t ./'%(' '.join(FILES),) 
-            cmd1 = 'cp -lr %s'%ccmd; 
-            cmd2 = 'cp -r %s'%ccmd
-            shellexec(cmd1) ==0 or shellexec(cmd2) 
+        #     pprint(dict(FILES=FILES,samplePATH=samplePATH))
+        # #     ccmd = '%s/* -t %s'%(samplePATH,temp_dir) 
+        #     ccmd = '%s -t ./'%(' '.join(FILES),) 
+        #     cmd1 = 'cp -lr %s'%ccmd; 
+        #     cmd2 = 'cp -r %s'%ccmd
+        #     shellexec(cmd1) ==0 or shellexec(cmd2) 
 
             print ('[ODIR]%s'%ODIR )
             
             
             if 1:
+                import shutil
                 #### Parse .fastq filenames and assert quality checks
-                if debug:
-                    FS = [x.rsplit('/')[-1] for x in  FILES]
-                    print( FS[:5] )
-                else:
-                    FS = glob.glob('*')
-                    FS = filterFastq(FS)
+                FS = Path(samplePATH).glob('*')
+                FS = filterFastq(FS)
+                for F in FS:
+                    shutil.copy2(F,F.basename())
+                FS = [x.basename() for x in FS]
 
                 BUF = '\n'.join(FS)
                 BUFHEAD = '\n'.join(FS[:5])
                 ##### Process baseSpace files
-                res = {
-                    x:len(re.findall( getattr(ptn,x),BUFHEAD)) for x in ['baseSpace',
+                ptn_counts = collections.OrderedDict([
+                    (x,len(re.findall( getattr(ptn,x),BUFHEAD))) for x in ['baseSpace',
                                                                          'baseSpaceSimple',
-                                                                         'srr'] }
-
+                                                                         'srr'] ])
                 if debug:
                     print res.items()
 
                 from pprint import pprint 
                 pprint(FS)
                 pprint(BUFHEAD)
-                pprint(res)
-
-                assert max(res.values())>0,'Cannot identify format of files:\n%s'%BUF
-                patName, pat = [(x,getattr(ptn,x)) for x,y in res.items() if y > 0][0]
-                PARSED = [dict(m.groupdict().items() + 
-                               [('fname',m.group(0))])
-                         for m in re.finditer(pat,BUF) ]
-                meta = pd.DataFrame(PARSED)
+                pprint(ptn_counts)
+                assert max(ptn_counts.values())==len(FS),pprint((FS,ptn_counts))
+                # ,'Cannot identify format of files:\n%s'%BUF
+                patName, pat = [(x,getattr(ptn,x)) for x,y in ptn_counts.items() if y == len(FS)][0]
+                def parse_ptn(pat, BUF):
+                    PARSED = [dict(m.groupdict().items() + 
+                                   [('fname',m.group(0))])
+                             for m in re.finditer(pat,BUF) ]
+                    meta = pd.DataFrame(PARSED)
+                    return meta
 
                 if patName =='baseSpace':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
                     meta = check_L004(meta)
                     meta = meta.sort_values(['lead','read','chunk'])
                 elif patName == 'baseSpaceSimple':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
                     meta = meta            
                 elif patName=='srr':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
                     meta = meta
+
+                pprint([patName,'-'*10])
+                pprint(meta.to_dict(orient='record')[:2])
                 meta  = meta__unzip(meta,debug=debug, NCORE=NCORE)
+                pprint(meta.to_dict(orient='record')[:2])
                 meta = meta__concat(meta,debug=debug, NCORE=NCORE)
                 if moveRaw:
                     meta = meta__moveRaw(meta,debug=debug, NCORE=NCORE)
@@ -354,8 +365,7 @@ def process_rna_sample(samplePATH, debug=0,checkMatch=0, timestamp=1, newDIR=Non
     #         raise e
     #     finally:
     #     import os
-        temp_dir = os.path.basename(os.getcwd())
-        sys.stdout.write('%s\n'%temp_dir)
+        sys.stdout.write('%s\n'%(cdir.realpath()))
         # if 1:
         #     os.chdir(ODIR)
     #### Stop here
@@ -431,10 +441,14 @@ def meta__rename(meta,debug=0, NCORE=None):
     else:
         mp_para(shellexec, cmds, ncore=NCORE)  
     return meta
+from pprint import pprint
 
 def meta__concat(meta,debug= 0, NCORE=None):
     assert NCORE is not None
     ### Map metas to fnames after decompression 
+
+    # pprint(dict(meta=meta))
+    # pprint(meta.to_dict(orient='record'))
     if 'chunk' not in meta.keys():
         return meta
     else:
