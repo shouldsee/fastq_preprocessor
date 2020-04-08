@@ -15,6 +15,7 @@ import multiprocessing as mp
 import pandas as pd
 import itertools
 import re
+import json
 
 class pyext(object):
     def df__iterdict(self, into=dict):
@@ -476,8 +477,8 @@ parser.add_argument('--NCORE',default=6,type=int)
 # argparse.Aru
 
 main = process_rna_sample
-if __name__=='__main__':
-    
+
+def main_entry():
 #     NCORE = int(os.environ.get('NCORE',6))
 #     print '[NCORE]=',NCORE
     # NCORE = 1
@@ -485,8 +486,19 @@ if __name__=='__main__':
 #     Usage: (python) map-RNA-seq.py /path/to/folder/
 #         The folder should contains raw reads in .fastq(.gz) format
 # '''
-    samplePATH = sys.argv[1]
+    # samplePATH = sys.argv[1]
     args = parser.parse_args()
 #     NCORE = args.NCORE
     temp_dir = process_rna_sample(**vars(args))
     sys.exit(0)
+
+if __name__=='__main__':
+    main_entry()
+
+
+'''
+for F in origin/*
+do
+gzip -d <$F | head -n1000 | gzip > test_data/$(basename $F)
+done
+'''
