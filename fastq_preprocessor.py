@@ -113,7 +113,7 @@ def LinesNotEmpty(sub):
     sub = [ x for x in sub.splitlines() if x]
     return sub
 
-def LeafFiles(DIR):
+def LeafFiles(DIR,check=False):
     ''' Drill down to leaf files of a directory tree if the path is unique.
     '''
     assert os.path.exists(DIR),'%s not exist'%DIR
@@ -128,7 +128,8 @@ def LeafFiles(DIR):
         DIR, ss = it[0];
         for dd,ss in it[1:]:
             NEWDIR, ALI = dd.rsplit('/',1)
-            assert NEWDIR == DIR, 'Next directory %s not contained in %s'%(dd,DIR)
+            if check:
+                assert NEWDIR == DIR, 'Next directory %s not contained in %s'%(dd,DIR)
             DIR = dd 
         res = [ '%s/%s'%(DIR,x) for x in LinesNotEmpty(ss)]
         return res                
@@ -186,7 +187,7 @@ datenow = lambda: datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
 
 #### Regex for downloaded .fastq(.gz) files
 # PTN = re.compile('(?P<lead>.*)_S(?P<sample>\d{1,3})_L(?P<chunk>\d+)_R(?P<read>[012])_(?P<trail>\d{1,4})\.(?P<ext>.+)')
-PTN = re.compile('(?P<lead>.*)_L(?P<chunk>\d+)_R(?P<read>[012])_(?P<trail>\d{1,4})\.(?P<ext>.+)')
+# PTN = re.compile('(?P<lead>.*)_L(?P<chunk>\d+)_R(?P<read>[012])_(?P<trail>\d{1,4})\.(?P<ext>.+)')
 
 
 def shellexec(cmd,debug=0):
@@ -195,175 +196,182 @@ def shellexec(cmd,debug=0):
         return subprocess.call(cmd,shell=1)
 #         return os.system(cmd)
 
-def process_rna_sample(samplePATH, debug=0,force=0, timestamp=1, 
-                       newDir=None,autoNewDir = None,
+def process_rna_sample(samplePATH, debug=0,checkMatch=0, timestamp=1, newDIR=None,
+                       newDir= None,
+#                        force=0,
                        NCORE=6,
-                      moveRaw=1,rename=0):
+                      moveRaw=1,rename=0,**kwargs):
     '''
     Pull together raw reads from an input folder
     Args:
         samplePATH: Folder of .fastq(.gz) fot. be processed
     Comment: Refactored based on Hui's map-RNA-seq.py process_rna_sample().    
+    
+    [ToDo]
+        This function is way too messy to be understood
     '''
+    del kwargs
+
+    samplePATH = os.path.realpath(samplePATH)
+    ### legacy
+    if newDir is not None:
+        newDIR = newDir
+        
     #     return os.system('/bin/bash -c `%s`'%cmd)
     #     cmd = '/bin/bash -c `%s`'%cmd
 
     #     return subprocess.call(cmd,env=os.environ,cwd=os.getcwd(),
     #                           shell=True)
-    
-
-    samplePATH = samplePATH.rstrip('/')
-    shellexec('echo $SHELL')
-    
-    RNA_SEQ_MAP_FILE = 'some-script.sh'
-    DESTINATION_DIR  ='"/path/to/output/"' 
-    WORKING_DIR='.'
-    
+    from pprint import pprint
+    pprint(samplePATH)
     ### Extract  RunID from samplePATH
-    samplePATH = samplePATH.rstrip('/')
-#     ptn = '[\^/](\d{1,4}[RC][_/].*)'
-#     ridPath = re.findall(ptn,samplePATH)
-    sp = samplePATH.rsplit('/',2)
+    x = samplePATH
+    x = x.rstrip('/').rsplit('/',2)
+    sp = x
     DataAccPath = ridPath = '/'.join(sp[-2:])
-    OLDPATH = sp[0]
-    os.system('echo %s>OLDPATH' % OLDPATH)
-    if not force:
-        pats = [ptn.runCond, 'SRR/SRR\d{7,8}' ]
+    # OLDPATH = sp[0]
+    # os.system('echo %s>OLDPATH' % OLDPATH)
+    
+    
+    
+    if checkMatch:
+        #### OLD 
+        pats = [ptn.runCond, 'SRR/SRR\d{7,8}', 'R\d{3,5}/S\d{1,5}']
         res = [ re.findall(pat, ridPath,) for pat in pats]
         assert max(map(len,res))==1,\
         '[ERROR] Cannot extract RunID from Accession:"{ridPath}"\
         \nRegex result:{res}\
         \nsamplePath:{samplePATH}'.format(**locals())
-        
-#         ridPath = res[0][-1]
-#     ridPath = re.findall(ptn.runCond,samplePATH)
     
-    print '[ridPath]',ridPath
-
+    print ('[ridPath]%s'%ridPath)
 
 
     
-
-    
-    #### Download raw read .fastq from samplePATH
-#     print samplePATH
-#     try:
     def filterFastq(FILES):
         FILES = filter(re.compile('.*\.(fastq)(\.gz|)').match, FILES)
         return FILES
+
+    #### Create a temporary directory 
     ODIR = os.getcwd()
-    os.system('mkdir -p %s'%WORKING_DIR)
-#     if newDir:
-    assert newDir,'must not be empty'
-    if autoNewDir:
-#     else:
-        # Create a temporary directory 
+    if newDIR is not None:
+        temp_dir = newDIR
+    else:
         DIR = [ridPath.replace('/','-')]
         if timestamp:
             DIR +=  [str(datenow())]
         DIR = '-'.join(DIR)
-        temp_dir = os.path.join(WORKING_DIR,
-                                DIR,
-        )
-    else: 
-#     if isinstance(newDir,basestring):
-        temp_dir = newDir
-
-    shellexec('mkdir -p %s'%temp_dir)
-#         os.system('mkdir -p %s'%temp_dir)          
-    os.chdir(temp_dir) #     shellexec('cd %s'%temp_dir)
-    if 1:
-        FILES = glob.glob('%s/*' % samplePATH)
-        FILES = sum(map(LeafFiles,FILES),[])
-        FILES = filterFastq(FILES)
-    #     ccmd = '%s/* -t %s'%(samplePATH,temp_dir) 
-        ccmd = '%s -t ./'%(' '.join(FILES),) 
-        cmd1 = 'cp -lr %s'%ccmd; 
-        cmd2 = 'cp -r %s'%ccmd
-        shellexec(cmd1) ==0 or shellexec(cmd2) 
-
-        print '[ODIR]',ODIR
+        temp_dir = DIR
+    # os.system('mkdir -p %s'%temp_dir)       
+    with Path(temp_dir).realpath().makedirs_p() as cdir:   
+    # os.chdir(temp_dir) #     shellexec('cd %s'%temp_dir)
         
-#     if 1:
-        
-        #### Parse .fastq filenames and assert quality checks
-#         print '[MSG] found leaves','\n'.join(FILES)
-        if debug:
-            FS = [x.rsplit('/')[-1] for x in  FILES]
-            print FS[:5]
-#             FS = [x[pL+1:] for x in FILES]
-#             FS = FILES
-    #         assert 0
-        else:
-            FS = glob.glob('*')
-            FS = filterFastq(FS)
+        #### Download raw read .fastq from samplePATH
+        if 1:
+        #     FILES = glob.glob('%s/*' % samplePATH)
+        #     FILES = sum(map(LeafFiles,FILES),[])
+        #     FILES = filterFastq(FILES)
+
+        #     pprint(dict(FILES=FILES,samplePATH=samplePATH))
+        # #     ccmd = '%s/* -t %s'%(samplePATH,temp_dir) 
+        #     ccmd = '%s -t ./'%(' '.join(FILES),) 
+        #     cmd1 = 'cp -lr %s'%ccmd; 
+        #     cmd2 = 'cp -r %s'%ccmd
+        #     shellexec(cmd1) ==0 or shellexec(cmd2) 
+
+            print ('[ODIR]%s'%ODIR )
             
-        BUF = '\n'.join(FS)
-        BUFHEAD = '\n'.join(FS[:5])
-        ##### Process baseSpace files
-        res = [
-            [x,len(re.findall( getattr(ptn,x),BUFHEAD))] for x in ['baseSpace',
-                                                                 'baseSpaceSimple',
-                                                                 'srr'] ]
-        res = collections.OrderedDict(res)
-        if debug:
-            print res.items()
-        assert max(res.values())>0,'Cannot identify format of files:\n%s'%BUF
-        patName, pat = [(x,getattr(ptn,x)) for x,y in res.items() if y > 0][0]
-        print ('[patternName]',patName)
-        PARSED = [dict(m.groupdict().items() + 
-                       [('fname',m.group(0))])
-                 for m in re.finditer(pat,BUF) ]
-        meta = pd.DataFrame(PARSED)
-
-        if patName =='baseSpace':
-            meta = check_L004(meta)
-            meta = meta.sort_values(['lead','read','chunk'])
-        elif patName == 'baseSpaceSimple':
-            meta = meta            
-        elif patName=='srr':
-            meta = meta
-        meta  = meta__unzip(meta,debug=debug)
-        meta = meta__concat(meta,debug=debug)
-        if moveRaw:
-            meta = meta__moveRaw(meta,debug=debug)
-        if rename:
-            meta = meta__rename(meta,debug=debug)
             
-        meta.insert(0,'DataAccPath', DataAccPath)
-        meta.insert(1,'DataAcc', DataAccPath.replace('/','-'))
-        print ('[OLDDIR]',ridPath,os.system('echo %s | tee OLDDIR | tee DATAACC'%ridPath))
-        meta__dumpFileArg(meta)
-        print '[DONE!]:%s'%samplePATH
-        meta.to_json('META.json',orient='records')
-        meta.to_csv('META.csv')
-        pymisca.util__fileDict.main(ofname='FILE.json',
-                                    argD=next(pyext.df__iterdict(meta)))
+            if 1:
+                import shutil
+                #### Parse .fastq filenames and assert quality checks
+                FS = Path(samplePATH).glob('*')
+                FS = filterFastq(FS)
+                for F in FS:
+                    shutil.copy2(F,F.basename())
+                FS = [x.basename() for x in FS]
+
+                BUF = '\n'.join(FS)
+                BUFHEAD = '\n'.join(FS[:5])
+                ##### Process baseSpace files
+                ptn_counts = collections.OrderedDict([
+                    (x,len(re.findall( getattr(ptn,x),BUFHEAD))) for x in ['baseSpace',
+                                                                         'baseSpaceSimple',
+                                                                         'srr'] ])
+                if debug:
+                    print res.items()
+
+                from pprint import pprint 
+                pprint(FS)
+                pprint(BUFHEAD)
+                pprint(ptn_counts)
+                assert max(ptn_counts.values())==len(FS),pprint((FS,ptn_counts))
+                # ,'Cannot identify format of files:\n%s'%BUF
+                patName, pat = [(x,getattr(ptn,x)) for x,y in ptn_counts.items() if y == len(FS)][0]
+                def parse_ptn(pat, BUF):
+                    PARSED = [dict(m.groupdict().items() + 
+                                   [('fname',m.group(0))])
+                             for m in re.finditer(pat,BUF) ]
+                    meta = pd.DataFrame(PARSED)
+                    return meta
+
+                if patName =='baseSpace':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
+                    meta = check_L004(meta)
+                    meta = meta.sort_values(['lead','read','chunk'])
+                elif patName == 'baseSpaceSimple':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
+                    meta = meta            
+                elif patName=='srr':
+                    meta = parse_ptn(getattr(ptn,patName),BUF)
+                    meta = meta
+
+                pprint([patName,'-'*10])
+                pprint(meta.to_dict(orient='record')[:2])
+                meta  = meta__unzip(meta,debug=debug, NCORE=NCORE)
+                pprint(meta.to_dict(orient='record')[:2])
+                meta = meta__concat(meta,debug=debug, NCORE=NCORE)
+                if moveRaw:
+                    meta = meta__moveRaw(meta,debug=debug, NCORE=NCORE)
+                if rename:
+                    meta = meta__rename(meta,debug=debug, NCORE=NCORE)
 
 
-        if debug:
-            print meta[['read','fname']]
-            assert 0
-#             return meta
-        else:
-            pass
-        
-#         unzipAndConcat(meta)
-#         exit(0)
-#     except Exception as e:        
-#         exc_type, exc_obj, exc_tb = sys.exc_info()
-#         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-#         print(exc_type, fname, exc_tb.tb_lineno)
-#         raise e
-#     finally:
-#     import os
-    temp_dir = os.path.basename(os.getcwd())
-#     shellexec('basename `pwd`')
-    if 1:
-        os.chdir(ODIR)
+            if 1:
+                ### Bookkeeping, not used
+                meta.insert(0,'DataAccPath', DataAccPath)
+                meta.insert(1,'DataAcc', DataAccPath.replace('/','-'))
+                print ('[OLDDIR]',ridPath,os.system('echo %s | tee OLDDIR | tee DATAACC'%ridPath))
+                meta__dumpFileArg(meta, debug=debug,NCORE=NCORE)
+                print '[DONE!]:%s'%samplePATH
+                meta.to_json('META.json',orient='records')
+                meta.to_csv('META.csv')
+                with open('FILE.json','w') as f:
+                    json.dump(next(pyext.df__iterdict(meta)), f)
+                    
+
+            if debug:
+                print( meta[['read','fname']] )
+                assert 0
+    #             return meta
+            else:
+                pass
+            
+    #         unzipAndConcat(meta)
+    #         exit(0)
+    #     except Exception as e:        
+    #         exc_type, exc_obj, exc_tb = sys.exc_info()
+    #         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+    #         print(exc_type, fname, exc_tb.tb_lineno)
+    #         raise e
+    #     finally:
+    #     import os
+        sys.stdout.write('%s\n'%(cdir.realpath()))
+        # if 1:
+        #     os.chdir(ODIR)
     #### Stop here
     return temp_dir
-def meta__dumpFileArg(meta):
+def meta__dumpFileArg(meta,debug=None,NCORE=None):
+    del debug,NCORE
     res = len(meta.read.unique())
     if len(meta)==2:
         paired = 1
@@ -390,7 +398,8 @@ def check_L004(meta):
         print mout[~idx][['fname','chunk']] 
         mout = mout[idx]
     return mout
-def meta__unzip(meta,debug=0):
+def meta__unzip(meta,debug=0,NCORE=None):
+    assert NCORE is not None
     idx= [x.endswith('gz') for x in meta['fname']]
     if any(idx):
         #### unzip .gz where applicable
@@ -399,13 +408,14 @@ def meta__unzip(meta,debug=0):
         if debug:
             print '\n'.join(cmds[:1])
         else:
-            mp_para(shellexec, cmds, ncore=NCORE)            
+            mp_para(shellexec,cmds, ncore=NCORE)            
         #### Remove .gz in DataFrame accordingly
         meta.loc[idx,'ext'] = [ x.rstrip('.gz')  for x in mcurr['ext'] ]
         meta.loc[idx,'fname'] = [ x.rstrip('.gz')  for x in mcurr['fname'] ]
     return meta
 
-def meta__moveRaw(meta,debug=0):
+def meta__moveRaw(meta,debug=0, NCORE=  None):
+    assert NCORE is not None
     shellexec('mkdir -p raw/')
     cmds = ['mv %s -t raw/'%(' '.join(meta.fname))]
     meta['fname'] = meta.eval('@paste0([["raw/"],fname])')
@@ -415,14 +425,15 @@ def meta__moveRaw(meta,debug=0):
         mp_para(shellexec,cmds, ncore=NCORE)  
     return meta
 
-def meta__rename(meta,debug=0):
+def meta__rename(meta,debug=0, NCORE=None):
+    assert NCORE is not None
 #     shellexec('mkdir -p raw/')
     cmds = []
     for d in pyext.df__iterdict(meta):
         d['ofname'] = 'R{read}.{ext}'.format(**d)
         cmd = 'mv {fname} {ofname}'.format(**d)
         cmds += [cmd]
-        meta.loc[d['Index'],'fname'] = d['ofname']
+        meta.loc[d['index'],'fname'] = d['ofname']
 #     cmds = ['mv %s -t raw/'%(' '.join(meta.fname))]
 #     meta['fname'] = meta.eval('@paste0([["raw/"],fname])')
     if debug:
@@ -430,9 +441,14 @@ def meta__rename(meta,debug=0):
     else:
         mp_para(shellexec, cmds, ncore=NCORE)  
     return meta
+from pprint import pprint
 
-def meta__concat(meta,debug= 0):
+def meta__concat(meta,debug= 0, NCORE=None):
+    assert NCORE is not None
     ### Map metas to fnames after decompression 
+
+    # pprint(dict(meta=meta))
+    # pprint(meta.to_dict(orient='record'))
     if 'chunk' not in meta.keys():
         return meta
     else:
@@ -458,38 +474,31 @@ def cmd_combineFastq(df,run=0):
 #     d = ptn.baseSpace.match(fnames[0]).groupdict()
     lead,read,ext=df.head(1)[['lead','read','ext']].values.ravel()
     ofname = '{lead}_R{read}_raw.{ext}'.format(**locals())
-    cmd = 'cat {fflat} >{ofname} ; sleep 0; rm -f {fflat} '.format(
+    cmd = 'cat {fflat} >{ofname} ; sleep 0; rm {fflat} '.format(
         **locals())
 #     df['cmd'] = cmd
 #     df['ofname'] = ofname
     return pd.Series({'fname':ofname,'cmd':cmd})
 
-# def cmd_combineFastq(fnames,run=0):cc
-#     fnames = sorted(list(fnames))
-#     d = ptn.baseSpace.match(fnames[0]).groupdict()
-#     cmd = 'cat {IN} >{lead}_R{read}_raw.{ext} ; sleep 0; rm {IN} '.format(
-#         IN=' '.join(fnames),
-#                                                  **d)
-#     return cmd
-
 def cmd_ungzip(F,):
-    cmd = 'gzip -d <{IN} >{OUT} ; sleep 0 ; rm -f {IN} '.format(IN=F,OUT=F.rstrip('.gz'))
+    cmd = 'gzip -d <{IN} >{OUT} ; sleep 0 ; rm {IN} '.format(IN=F,OUT=F.rstrip('.gz'))
     return cmd
 
-assert len(sys.argv) >= 2,'''
-    Usage: (python) map-RNA-seq.py /path/to/folder/
-        The folder should contains raw reads in .fastq(.gz) format
-'''
+
 
 import argparse
-parser=argparse.ArgumentParser()
+parser=argparse.ArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
+
 parser.add_argument('samplePATH',)
 parser.add_argument('--timestamp',action='store_true')
-parser.add_argument('--newDir',default='.',)
-parser.add_argument('--autoNewDir',default=0,type=bool)
+parser.add_argument('--newDIR',default='.',)
+parser.add_argument('--newDir',default=None,)
 parser.add_argument('--moveRaw',default=0,type=bool)
 parser.add_argument('--rename',default=0,type=bool)
-parser.add_argument('--force',action='store_true')
+
+parser.add_argument('--force',default = 0, type = int,) #### deprecated and not used
+parser.add_argument('--checkMatch',default = 0, type = int,)
 parser.add_argument('--debug',action='store_true')
 parser.add_argument('--NCORE',default=6,type=int)
 # 'raw-data/900R/S1'
@@ -499,19 +508,7 @@ main = process_rna_sample
 
 def main_entry(args=None):
     args = parser.parse_args()
-    NCORE = args.NCORE
     temp_dir = process_rna_sample(**vars(args))
-#     timestamp=1, newDir=1
-
-#     temp_dir = process_rna_sample( samplePATH, force=0,
-#                                   debug=0
-#                                  )
-    
-#     for i in range(10):
-#         os.system('sleep 0.5')
-#         print i*0.5
-    # raise Exception('[WTF]%s'%temp_dir)
-    print >>sys.stdout,temp_dir
     sys.exit(0)
 
 if __name__=='__main__':
